@@ -25,20 +25,38 @@ def migrate_songs():
         song = {
             'id': row['id'],
             'title': row['title'],
-            'title_lang': {'ja': row['title'], 'en': None, 'cn': None, 'tw': None, 'ko': None},
+            'title_lang': {
+                'ja': row['title'],
+                'en': None,
+                'cn': None,
+                'tw': None,
+                'ko': None,
+            },
             'subtitle': row['subtitle'],
-            'subtitle_lang': {'ja': row['subtitle'], 'en': None, 'cn': None, 'tw': None, 'ko': None},
-            'courses': {'easy': None, 'normal': None, 'hard': None, 'oni': None, 'ura': None},
-            'enabled': True if row['enabled'] else False,
+            'subtitle_lang': {
+                'ja': row['subtitle'],
+                'en': None,
+                'cn': None,
+                'tw': None,
+                'ko': None,
+            },
+            'courses': {
+                'easy': None,
+                'normal': None,
+                'hard': None,
+                'oni': None,
+                'ura': None,
+            },
+            'enabled': bool(row['enabled']),
             'category_id': row['category'],
             'type': row['type'],
             'offset': row['offset'] or 0,
             'skin_id': row['skin_id'],
             'preview': row['preview'] or 0,
-            'volume':  row['volume'] or 1.0,
+            'volume': row['volume'] or 1.0,
             'maker_id': row['maker_id'],
             'hash': row['hash'],
-            'order': row['id']
+            'order': row['id'],
         }
 
         for diff in ['easy', 'normal', 'hard', 'oni', 'ura']:
@@ -47,9 +65,9 @@ def migrate_songs():
                 branch = False
                 if len(spl) > 1 and spl[1] == 'B':
                     branch = True
-                
+
                 song['courses'][diff] = {'stars': int(spl[0]), 'branch': branch}
-        
+
         if row['title_lang']:
             langs = row['title_lang'].splitlines()
             for lang in langs:
@@ -70,7 +88,7 @@ def migrate_songs():
 
         db.songs.insert_one(song)
         last_song = song['id']
-    
+
     db.seq.insert_one({'name': 'songs', 'value': last_song})
 
 def migrate_makers():

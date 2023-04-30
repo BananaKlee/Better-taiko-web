@@ -14,17 +14,15 @@ def parse_osu(osu):
 
     for line in osu_lines:
         line = line.strip()
-        secm = re.match('^\[(\w+)\]$', line)
-        if secm:
+        if secm := re.match('^\[(\w+)\]$', line):
             if current_section:
                 sections[current_section[0]] = current_section[1]
-            current_section = (secm.group(1), [])
+            current_section = secm[1], []
+        elif current_section:
+            current_section[1].append(line)
         else:
-            if current_section:
-                current_section[1].append(line)
-            else:
-                current_section = ('Default', [line])
-    
+            current_section = ('Default', [line])
+
     if current_section:
         sections[current_section[0]] = current_section[1]
 
@@ -47,13 +45,15 @@ def get_preview(song_id, song_type):
     preview = 0
 
     if song_type == "tja":
-        if os.path.isfile('public/songs/%s/main.tja' % song_id):
-            preview = get_tja_preview('public/songs/%s/main.tja' % song_id)
-    else:
-        osus = [osu for osu in os.listdir('public/songs/%s' % song_id) if osu in ['easy.osu', 'normal.osu', 'hard.osu', 'oni.osu']]
-        if osus:
-            osud = parse_osu('public/songs/%s/%s' % (song_id, osus[0]))
-            preview = int(get_osu_key(osud, 'General', 'PreviewTime', 0))
+        if os.path.isfile(f'public/songs/{song_id}/main.tja'):
+            preview = get_tja_preview(f'public/songs/{song_id}/main.tja')
+    elif osus := [
+        osu
+        for osu in os.listdir(f'public/songs/{song_id}')
+        if osu in ['easy.osu', 'normal.osu', 'hard.osu', 'oni.osu']
+    ]:
+        osud = parse_osu(f'public/songs/{song_id}/{osus[0]}')
+        preview = int(get_osu_key(osud, 'General', 'PreviewTime', 0))
 
     return preview
 
