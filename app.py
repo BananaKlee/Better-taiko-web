@@ -52,25 +52,27 @@ def api_error(message):
 def generate_hash(id, form):
     md5 = hashlib.md5()
     if form['type'] == 'tja':
-        urls = ['%s%s/main.tja' % (config.SONGS_BASEURL, id)]
+        urls = [f'{config.SONGS_BASEURL}{id}/main.tja']
     else:
-        urls = []
-        for diff in ['easy', 'normal', 'hard', 'oni', 'ura']:
-            if form['course_' + diff]:
-                urls.append('%s%s/%s.osu' % (config.SONGS_BASEURL, id, diff))
-
+        urls = [
+            f'{config.SONGS_BASEURL}{id}/{diff}.osu'
+            for diff in ['easy', 'normal', 'hard', 'oni', 'ura']
+            if form[f'course_{diff}']
+        ]
     for url in urls:
         if url.startswith("http://") or url.startswith("https://"):
             resp = requests.get(url)
             if resp.status_code != 200:
-                raise HashException('Invalid response from %s (status code %s)' % (resp.url, resp.status_code))
+                raise HashException(
+                    f'Invalid response from {resp.url} (status code {resp.status_code})'
+                )
             md5.update(resp.content)
         else:
             if url.startswith("/"):
                 url = url[1:]
             path = os.path.normpath(os.path.join("public", url))
             if not os.path.isfile(path):
-                raise HashException("File not found: %s" % (os.path.abspath(path)))
+                raise HashException(f"File not found: {os.path.abspath(path)}")
             with open(path, "rb") as file:
                 md5.update(file.read())
 
@@ -80,9 +82,12 @@ def generate_hash(id, form):
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('username'):
-            return api_error('not_logged_in')
-        return f(*args, **kwargs)
+        return (
+            f(*args, **kwargs)
+            if session.get('username')
+            else api_error('not_logged_in')
+        )
+
     return decorated_function
 
 
@@ -92,13 +97,12 @@ def admin_required(level):
         def wrapper(*args, **kwargs):
             if not session.get('username'):
                 return abort(403)
-            
-            user = db.users.find_one({'username': session.get('username')})
-            if user['user_level'] < level:
-                return abort(403)
 
-            return f(*args, **kwargs)
+            user = db.users.find_one({'username': session.get('username')})
+            return abort(403) if user['user_level'] < level else f(*args, **kwargs)
+
         return wrapper
+
     return decorated_function
 
 
@@ -109,9 +113,10 @@ def handle_csrf_error(e):
 
 @app.before_request
 def before_request_func():
-    if session.get('session_id'):
-        if not db.users.find_one({'session_id': session.get('session_id')}):
-            session.clear()
+    if session.get('session_id') and not db.users.find_one(
+        {'session_id': session.get('session_id')}
+    ):
+        session.clear()
 
 
 def get_config(credentials=False):
@@ -154,7 +159,7 @@ def get_version():
             print('Invalid version.json file')
             return version
 
-        for key in version.keys():
+        for key in version:
             if ver.get(key):
                 version[key] = ver.get(key)
 
@@ -166,7 +171,7 @@ def get_db_don(user):
     return {'body_fill': don_body_fill, 'face_fill': don_face_fill}
 
 def get_default_don(part=None):
-    if part == None:
+    if part is None:
         return {
             'body_fill': get_default_don('body_fill'),
             'face_fill': get_default_don('face_fill')
@@ -241,21 +246,27 @@ def route_admin_songs_new():
 @app.route('/admin/songs/new', methods=['POST'])
 @admin_required(level=100)
 def route_admin_songs_new_post():
-    output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
-    output['enabled'] = True if request.form.get('enabled') else False
+    output = {
+        'title_lang': {},
+        'subtitle_lang': {},
+        'courses': {},
+        'enabled': bool(request.form.get('enabled')),
+    }
     output['title'] = request.form.get('title') or None
     output['subtitle'] = request.form.get('subtitle') or None
     for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
-        output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
-        output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
+        output['title_lang'][lang] = request.form.get(f'title_{lang}') or None
+        output['subtitle_lang'][lang] = request.form.get(f'subtitle_{lang}') or None
 
     for course in ['easy', 'normal', 'hard', 'oni', 'ura']:
-        if request.form.get('course_%s' % course):
-            output['courses'][course] = {'stars': int(request.form.get('course_%s' % course)),
-                                         'branch': True if request.form.get('branch_%s' % course) else False}
+        if request.form.get(f'course_{course}'):
+            output['courses'][course] = {
+                'stars': int(request.form.get(f'course_{course}')),
+                'branch': bool(request.form.get(f'branch_{course}')),
+            }
         else:
             output['courses'][course] = None
-    
+
     output['category_id'] = int(request.form.get('category_id')) or None
     output['type'] = request.form.get('type')
     output['music_type'] = request.form.get('music_type')
@@ -264,30 +275,30 @@ def route_admin_songs_new_post():
     output['preview'] = float(request.form.get('preview')) or None
     output['volume'] = float(request.form.get('volume')) or None
     output['maker_id'] = int(request.form.get('maker_id')) or None
-    output['lyrics'] = True if request.form.get('lyrics') else False
+    output['lyrics'] = bool(request.form.get('lyrics'))
     output['hash'] = request.form.get('hash')
-    
+
     seq = db.seq.find_one({'name': 'songs'})
     seq_new = seq['value'] + 1 if seq else 1
-    
+
     hash_error = False
     if request.form.get('gen_hash'):
         try:
             output['hash'] = generate_hash(seq_new, request.form)
         except HashException as e:
             hash_error = True
-            flash('An error occurred: %s' % str(e), 'error')
-    
+            flash(f'An error occurred: {str(e)}', 'error')
+
     output['id'] = seq_new
     output['order'] = seq_new
-    
+
     db.songs.insert_one(output)
     if not hash_error:
         flash('Song created.')
-    
+
     db.seq.update_one({'name': 'songs'}, {'$set': {'value': seq_new}}, upsert=True)
-    
-    return redirect('/admin/songs/%s' % str(seq_new))
+
+    return redirect(f'/admin/songs/{str(seq_new)}')
 
 
 @app.route('/admin/songs/<int:id>', methods=['POST'])
@@ -302,21 +313,23 @@ def route_admin_songs_id_post(id):
 
     output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
     if user_level >= 100:
-        output['enabled'] = True if request.form.get('enabled') else False
+        output['enabled'] = bool(request.form.get('enabled'))
 
     output['title'] = request.form.get('title') or None
     output['subtitle'] = request.form.get('subtitle') or None
     for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
-        output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
-        output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
+        output['title_lang'][lang] = request.form.get(f'title_{lang}') or None
+        output['subtitle_lang'][lang] = request.form.get(f'subtitle_{lang}') or None
 
     for course in ['easy', 'normal', 'hard', 'oni', 'ura']:
-        if request.form.get('course_%s' % course):
-            output['courses'][course] = {'stars': int(request.form.get('course_%s' % course)),
-                                         'branch': True if request.form.get('branch_%s' % course) else False}
+        if request.form.get(f'course_{course}'):
+            output['courses'][course] = {
+                'stars': int(request.form.get(f'course_{course}')),
+                'branch': bool(request.form.get(f'branch_{course}')),
+            }
         else:
             output['courses'][course] = None
-    
+
     output['category_id'] = int(request.form.get('category_id')) or None
     output['type'] = request.form.get('type')
     output['music_type'] = request.form.get('music_type')
@@ -325,22 +338,22 @@ def route_admin_songs_id_post(id):
     output['preview'] = float(request.form.get('preview')) or None
     output['volume'] = float(request.form.get('volume')) or None
     output['maker_id'] = int(request.form.get('maker_id')) or None
-    output['lyrics'] = True if request.form.get('lyrics') else False
+    output['lyrics'] = bool(request.form.get('lyrics'))
     output['hash'] = request.form.get('hash')
-    
+
     hash_error = False
     if request.form.get('gen_hash'):
         try:
             output['hash'] = generate_hash(id, request.form)
         except HashException as e:
             hash_error = True
-            flash('An error occurred: %s' % str(e), 'error')
-    
+            flash(f'An error occurred: {str(e)}', 'error')
+
     db.songs.update_one({'id': id}, {'$set': output})
     if not hash_error:
         flash('Changes saved.')
-    
-    return redirect('/admin/songs/%s' % id)
+
+    return redirect(f'/admin/songs/{id}')
 
 
 @app.route('/admin/songs/<int:id>/delete', methods=['POST'])
@@ -407,10 +420,13 @@ def route_api_preview():
     song_type = song['type']
     song_ext = song['music_type'] if song['music_type'] else "mp3"
     prev_path = make_preview(song_id, song_type, song_ext, song['preview'])
-    if not prev_path:
-        return redirect(get_config()['songs_baseurl'] + '%s/main.%s' % (song_id, song_ext))
-
-    return redirect(get_config()['songs_baseurl'] + '%s/preview.mp3' % song_id)
+    return (
+        redirect(get_config()['songs_baseurl'] + f'{song_id}/preview.mp3')
+        if prev_path
+        else redirect(
+            get_config()['songs_baseurl'] + f'{song_id}/main.{song_ext}'
+        )
+    )
 
 
 @app.route('/api/songs')
@@ -512,12 +528,12 @@ def route_api_login():
     password = data.get('password', '').encode('utf-8')
     if not bcrypt.checkpw(password, result['password']):
         return api_error('invalid_username_password')
-    
+
     don = get_db_don(result)
-    
+
     session['session_id'] = result['session_id']
     session['username'] = result['username']
-    session.permanent = True if data.get('remember') else False
+    session.permanent = bool(data.get('remember'))
 
     return jsonify({'status': 'ok', 'username': result['username'], 'display_name': result['display_name'], 'don': don})
 
@@ -649,13 +665,10 @@ def route_api_scores_save():
 def route_api_scores_get():
     username = session.get('username')
 
-    scores = []
-    for score in db.scores.find({'username': username}):
-        scores.append({
-            'hash': score['hash'],
-            'score': score['score']
-        })
-
+    scores = [
+        {'hash': score['hash'], 'score': score['score']}
+        for score in db.scores.find({'username': username})
+    ]
     user = db.users.find_one({'username': username})
     don = get_db_don(user)
     return jsonify({'status': 'ok', 'scores': scores, 'username': user['username'], 'display_name': user['display_name'], 'don': don})
@@ -672,17 +685,21 @@ def route_api_privacy():
 
 
 def make_preview(song_id, song_type, song_ext, preview):
-    song_path = 'public/songs/%s/main.%s' % (song_id, song_ext)
-    prev_path = 'public/songs/%s/preview.mp3' % song_id
+    song_path = f'public/songs/{song_id}/main.{song_ext}'
+    prev_path = f'public/songs/{song_id}/preview.mp3'
 
     if os.path.isfile(song_path) and not os.path.isfile(prev_path):
         if not preview or preview <= 0:
-            print('Skipping #%s due to no preview' % song_id)
+            print(f'Skipping #{song_id} due to no preview')
             return False
 
-        print('Making preview.mp3 for song #%s' % song_id)
-        ff = FFmpeg(inputs={song_path: '-ss %s' % preview},
-                    outputs={prev_path: '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'})
+        print(f'Making preview.mp3 for song #{song_id}')
+        ff = FFmpeg(
+            inputs={song_path: f'-ss {preview}'},
+            outputs={
+                prev_path: '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'
+            },
+        )
         ff.run()
 
     return prev_path

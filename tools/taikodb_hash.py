@@ -22,8 +22,8 @@ def get_hashes(root):
 				md5(md5hash, os.path.join(dir_path, "main.tja"))
 			else:
 				for diff in diffs:
-					if diff + ".osu" in files:
-						md5(md5hash, os.path.join(dir_path, diff + ".osu"))
+					if f"{diff}.osu" in files:
+						md5(md5hash, os.path.join(dir_path, f"{diff}.osu"))
 			hashes[dir] = base64.b64encode(md5hash.digest())[:-2]
 	return hashes
 
